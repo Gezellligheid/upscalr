@@ -44,26 +44,8 @@
 
         <!-- Settings card -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-          <div class="flex items-center justify-between mb-4">
+          <div class="mb-4">
             <h3 class="text-sm font-semibold text-slate-700">Upscale settings</h3>
-            <!-- Deblur toggle -->
-            <label class="flex items-center gap-2 cursor-pointer select-none">
-              <span class="text-xs font-medium text-slate-500">Deblur</span>
-              <button
-                @click="deblur = !deblur"
-                :class="[
-                  'relative w-9 h-5 rounded-full transition-colors',
-                  deblur ? 'bg-indigo-600' : 'bg-slate-200',
-                ]"
-              >
-                <span
-                  :class="[
-                    'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
-                    deblur ? 'translate-x-4' : 'translate-x-0',
-                  ]"
-                />
-              </button>
-            </label>
           </div>
           <div class="flex flex-wrap gap-6">
             <!-- Scale -->
@@ -95,6 +77,25 @@
                 type="range"
                 min="0" max="3" step="1"
                 v-model.number="sharpen"
+                class="w-full accent-indigo-600 h-2 rounded-full cursor-pointer"
+              />
+              <div class="flex justify-between text-xs text-slate-400 mt-1">
+                <span>None</span>
+                <span>Light</span>
+                <span>Medium</span>
+                <span>Strong</span>
+              </div>
+            </div>
+
+            <!-- Deblur -->
+            <div class="flex-1 min-w-[200px]">
+              <label class="block text-xs font-medium text-slate-500 mb-2">
+                Deblur &mdash; <span class="text-indigo-600 font-semibold">{{ deblurLabels[deblur] }}</span>
+              </label>
+              <input
+                type="range"
+                min="0" max="3" step="1"
+                v-model.number="deblur"
                 class="w-full accent-indigo-600 h-2 rounded-full cursor-pointer"
               />
               <div class="flex justify-between text-xs text-slate-400 mt-1">
@@ -186,13 +187,14 @@ const fileName    = ref('');
 const file        = ref(null);
 const scale       = ref(2);
 const sharpen     = ref(1);
-const deblur      = ref(false);
+const deblur      = ref(0);
 const processing  = ref(false);
 const error       = ref(null);
 const origDim     = ref('');
 const newDim      = ref('');
 
-const sharpenLabels  = ['None', 'Light', 'Medium', 'Strong'];
+const sharpenLabels  = ['None', 'Light', 'Medium', 'Strong']
+const deblurLabels   = ['None', 'Light', 'Medium', 'Strong'];
 const sharpenValues  = [0, 0.5, 1.0, 2.0];
 
 const downloadName = computed(() => {
@@ -213,6 +215,33 @@ function onImageSelected(selectedFile) {
   img.src = originalUrl.value;
 }
 
+async function compressForUpload(sourceFile) {
+  const MAX_BYTES = 3.5 * 1024 * 1024; // stay well under Vercel's 4.5 MB hard limit
+  if (sourceFile.size <= MAX_BYTES) return sourceFile;
+
+  const bitmap = await createImageBitmap(sourceFile);
+  let { width, height } = bitmap;
+
+  // Scale dimensions so the re-encoded JPEG fits within the limit
+  const ratio = Math.sqrt(MAX_BYTES / sourceFile.size) * 0.9;
+  width  = Math.round(width  * ratio);
+  height = Math.round(height * ratio);
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = width;
+  canvas.height = height;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  return new Promise(resolve =>
+    canvas.toBlob(
+      blob => resolve(new File([blob], sourceFile.name, { type: 'image/jpeg' })),
+      'image/jpeg',
+      0.88,
+    )
+  );
+}
+
 async function processImage() {
   if (!file.value) return;
   processing.value = true;
@@ -220,11 +249,13 @@ async function processImage() {
   resultUrl.value  = null;
 
   try {
+    const uploadFile = await compressForUpload(file.value);
+
     const formData = new FormData();
-    formData.append('image',   file.value);
+    formData.append('image',   uploadFile);
     formData.append('scale',   scale.value);
     formData.append('sharpen', sharpenValues[sharpen.value]);
-    formData.append('deblur',  deblur.value);
+    formData.append('deblur',  String(deblur.value));
 
     const res = await fetch('/api/upscale', { method: 'POST', body: formData });
 
@@ -255,6 +286,6 @@ function reset() {
   error.value       = null;
   origDim.value     = '';
   newDim.value      = '';
-  deblur.value      = false;
+  deblur.value      = 0;
 }
 </script>

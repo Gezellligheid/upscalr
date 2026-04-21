@@ -3,13 +3,6 @@ import sharp from 'sharp';
 import { readFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 
-export const config = {
-  api: {
-    bodyParser: false,
-    sizeLimit: '50mb',
-  },
-};
-
 // Sharpen presets — tuned for upscaled photographic content
 const SHARPEN = {
   0:   null,
@@ -18,13 +11,25 @@ const SHARPEN = {
   2.0: { sigma: 1.2, m1: 4.0,  m2: 1.2 },
 };
 
-// Deblur: two unsharp mask passes targeting broad and fine blur frequencies
-async function deblurBuffer(inputBuffer) {
-  // Pass 1 — target broad gaussian blur (large sigma)
+// Deblur levels 1–3: increasing aggressiveness
+// Level 1 (Light)  — single pass, mild unsharp mask
+// Level 2 (Medium) — single pass, stronger broad-blur recovery
+// Level 3 (Strong) — two passes: broad then fine detail recovery
+async function deblurBuffer(inputBuffer, level) {
+  if (level === 1) {
+    return sharp(inputBuffer)
+      .sharpen({ sigma: 1.5, m1: 2.0, m2: 0.1, x1: 4, y2: 15, y3: 5 })
+      .toBuffer();
+  }
+  if (level === 2) {
+    return sharp(inputBuffer)
+      .sharpen({ sigma: 2.5, m1: 4.0, m2: 0.2, x1: 4, y2: 25, y3: 8 })
+      .toBuffer();
+  }
+  // level 3: broad pass then fine-detail recovery pass
   const pass1 = await sharp(inputBuffer)
     .sharpen({ sigma: 2.5, m1: 4.0, m2: 0.2, x1: 4, y2: 25, y3: 8 })
     .toBuffer();
-  // Pass 2 — recover fine detail lost in the blur (small sigma)
   return sharp(pass1)
     .sharpen({ sigma: 0.6, m1: 1.5, m2: 0.3 })
     .toBuffer();
@@ -74,12 +79,12 @@ export default async function handler(req, res) {
   try {
     const scale = parseFloat(fields.scale?.[0]) || 2;
     const sharpenKey = parseFloat(fields.sharpen?.[0]) || 0;
-    const deblur = fields.deblur?.[0] === 'true';
+    const deblurLevel = Math.min(Math.max(parseInt(fields.deblur?.[0]) || 0, 0), 3);
     const clampedScale = Math.min(Math.max(scale, 1.5), 4);
     const sharpenOpts = SHARPEN[sharpenKey] ?? SHARPEN[1.0];
 
     let imageBuffer = readFileSync(imageFile.filepath);
-    if (deblur) imageBuffer = await deblurBuffer(imageBuffer);
+    if (deblurLevel > 0) imageBuffer = await deblurBuffer(imageBuffer, deblurLevel);
     const meta = await sharp(imageBuffer).metadata();
 
     const MAX_INPUT_PIXELS = 25_000_000; // ~5000×5000

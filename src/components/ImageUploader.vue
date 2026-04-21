@@ -36,7 +36,7 @@
         {{ dragging ? 'Drop your image here' : 'Drag & drop your image here' }}
       </p>
       <p class="text-sm text-slate-400 mt-1">or click to browse</p>
-      <p class="text-xs text-slate-300 mt-4">JPEG, PNG, WebP, TIFF &mdash; up to 50 MB</p>
+      <p class="text-xs text-slate-300 mt-4">JPEG, PNG, WebP, TIFF &mdash; large files auto-compressed before upload</p>
     </div>
   </div>
 </template>
