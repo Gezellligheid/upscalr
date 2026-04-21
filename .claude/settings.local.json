@@ -4,7 +4,8 @@
       "Bash(npm install:*)",
       "Bash(node server.js)",
       "Bash(npm run:*)",
-      "Bash(npm view:*)"
+      "Bash(npm view:*)",
+      "mcp__plugin_context-mode_context-mode__ctx_batch_execute"
     ]
   }
 }

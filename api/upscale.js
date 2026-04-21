@@ -81,6 +81,12 @@ export default async function handler(req, res) {
     let imageBuffer = readFileSync(imageFile.filepath);
     if (deblur) imageBuffer = await deblurBuffer(imageBuffer);
     const meta = await sharp(imageBuffer).metadata();
+
+    const MAX_INPUT_PIXELS = 25_000_000; // ~5000×5000
+    if (meta.width * meta.height > MAX_INPUT_PIXELS) {
+      return res.status(400).json({ error: `Image too large. Maximum input size is 25 megapixels (e.g. 5000×5000). Yours is ${meta.width}×${meta.height}.` });
+    }
+
     const newWidth  = Math.round(meta.width  * clampedScale);
     const newHeight = Math.round(meta.height * clampedScale);
     const outputFormat = meta.format === 'png' ? 'png' : 'jpeg';
@@ -102,18 +108,19 @@ export default async function handler(req, res) {
         .resize(newWidth, newHeight, { kernel: sharp.kernel.lanczos3, fastShrinkOnLoad: false })
         .clahe({ width: 64, height: 64, maxSlope: 2 })  // local contrast boost
         .sharpen(sharpenOpts ?? { sigma: 0.5, m1: 0.8, m2: 0.1 })
-        .toFormat(outputFormat, { quality: 95, ...(outputFormat === 'jpeg' ? { mozjpeg: true } : {}) })
+        .toFormat(outputFormat, { quality: 92 })
         .toBuffer();
     } else {
       // Single-pass for 2x / 3x
+      const useClahe = newWidth * newHeight < 16_000_000; // skip CLAHE on very large outputs
       let pipe = sharp(imageBuffer)
-        .resize(newWidth, newHeight, { kernel: sharp.kernel.lanczos3, fastShrinkOnLoad: false })
-        .clahe({ width: 64, height: 64, maxSlope: 2 });
+        .resize(newWidth, newHeight, { kernel: sharp.kernel.lanczos3, fastShrinkOnLoad: false });
+      if (useClahe) pipe = pipe.clahe({ width: 64, height: 64, maxSlope: 2 });
 
       if (sharpenOpts) pipe = pipe.sharpen(sharpenOpts);
 
       processed = await pipe
-        .toFormat(outputFormat, { quality: 95, ...(outputFormat === 'jpeg' ? { mozjpeg: true } : {}) })
+        .toFormat(outputFormat, { quality: 92 })
         .toBuffer();
     }
 
